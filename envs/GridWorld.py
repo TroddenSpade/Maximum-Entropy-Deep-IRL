@@ -13,7 +13,8 @@ class GridWorld:
         self.grid = np.zeros((grid_size, grid_size))
 
         self.features = np.eye(self.n_states)
-    
+        self.dynamics = self.transition_probabilities()
+        self.real_rewards = np.array([self.reward(s) for s in range(self.n_states)])
         self.state = 0
 
 
@@ -21,51 +22,39 @@ class GridWorld:
         return 1 if state_p == self.n_states-1 else 0
         
 
-    def reset(self):
-        self.state = 0
+    def reset(self, random=False):
+        if random:
+            self.state = np.random.randint(self.n_states)
+        else:
+            self.state = 0
         return self.state
 
 
     def step(self, a):
-        probs = np.zeros(self.n_states)
-        for s_p in range(self.n_states):
-            probs[s_p] = self.dynamics(s_p, a, self.state)
-
+        probs = self.dynamics[:, a, self.state]
         self.state = np.random.choice(self.n_states, p=probs)
         return self.state
 
 
-    def dynamics(self, s_p, a, s):
-        x_a, y_a = self.actions[a]
-        x, y = s%self.grid_size, s//self.grid_size
-        x_p, y_p = s_p%self.grid_size, s_p//self.grid_size
-
-        if not (0 <= x_p < self.grid_size and 0 <= y_p < self.grid_size):
-            return 0.0
-        if not (0 <= x < self.grid_size and 0 <= y < self.grid_size):
-            return 0.0
-
-        if abs(x-x_p) + abs(y-y_p) > 1:
-            return 0.0
-
-        if (x+x_a, y+y_a) == (x_p, y_p):
-            return 1 - self.wind + self.wind/self.n_actions
-
-        if (x, y) == (x_p, y_p):
-            if not (0 <= x+x_a < self.grid_size and 0 <= y+y_a < self.grid_size):
-                if (x,y) in [(0,0), (0,self.grid_size-1), (self.grid_size-1,0), (self.grid_size-1,self.grid_size-1)]:
-                    return 1 - self.wind + 2*self.wind/self.n_actions
+    def transition_probabilities(self):
+        dynamics = np.zeros((self.n_states, self.n_actions, self.n_states))
+        # S_t+1, A_t, S_t
+        for s in range(self.n_states):
+            x, y = s%self.grid_size, s//self.grid_size
+            for a in range(self.n_actions):
+                x_a, y_a = self.actions[a]
+                for d in range(self.n_actions):
+                    x_d, y_d = self.actions[d]
+                    if 0 <= x+x_d < self.grid_size and 0 <= y+y_d < self.grid_size:
+                        dynamics[(x+x_d) + (y+y_d)*self.grid_size, a, s] += self.wind/self.n_actions
+                    else:
+                        dynamics[s, a, s] += self.wind/self.n_actions
+                if 0 <= x+x_a < self.grid_size and 0 <= y+y_a < self.grid_size:
+                    dynamics[(x+x_a) + (y+y_a)*self.grid_size, a, s] += 1 - self.wind
                 else:
-                    return 1 - self.wind + self.wind/self.n_actions
-            else:
-                if (x,y) in [(0,0), (0,self.grid_size-1), (self.grid_size-1,0), (self.grid_size-1,self.grid_size-1)]:
-                    return 2 * self.wind/self.n_actions
-                elif x == 0 or x == self.grid_size-1 or y == 0 or y == self.grid_size-1:
-                    return self.wind/self.n_actions
-                else:
-                    return 0.0
-       
-        return self.wind/self.n_actions
+                    dynamics[s, a, s] += 1 - self.wind
+                
+        return dynamics
 
     
     def test(self):
@@ -73,9 +62,7 @@ class GridWorld:
             print("/// State: ", s)
             for a in range(self.n_actions):
                 print("/// Action: ", self.names[a])
-                probs = np.zeros((self.grid_size*self.grid_size))
-                for s_p in range(self.n_states):
-                    probs[s_p] = self.dynamics(s_p, a, s)
+                probs = self.dynamics[:, a, s]
                 print(probs.reshape(-1, self.grid_size))
 
 
